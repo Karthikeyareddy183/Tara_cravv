@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tara_pipeline"
+version = "0.1.0"
+description = "End-to-end voice command pipeline for Tara kitchen assistant"
+requires-python = ">=3.10"
+dependencies = [
+    "faster-whisper>=1.0.0",
+    "openai-whisper>=20231117",
+    "deepfilternet>=0.5.6",
+    "noisereduce>=3.0.2",
+    "soundfile>=0.12.1",
+    "librosa>=0.10.2",
+    "onnxruntime>=1.18.1",
+    "torch>=2.0.0",
+    "torchaudio>=2.0.0",
+    "numpy>=1.24.0",
+    "scipy>=1.11.0",
+    "openwakeword>=0.6.0",
+    "pvporcupine>=3.0.0",
+    "matplotlib>=3.7.0",
+    "tabulate>=0.9.0",
+    "loguru>=0.7.0",
+    "tqdm>=4.66.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tara_pipeline*"]
+
+[project.scripts]
+tara-run = "scripts.run_pipeline:main"
+tara-bench = "scripts.benchmark_latency:main"

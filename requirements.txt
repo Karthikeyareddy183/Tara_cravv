@@ -1,0 +1,38 @@
+# Core audio processing
+soundfile==0.12.1
+librosa==0.10.2
+scipy==1.13.1
+numpy==1.26.4
+
+# STT — Iteration 1 & 2 baseline
+openai-whisper==20231117
+
+# STT — Iteration 3 & 4 final
+faster-whisper==1.1.1
+
+# Noise suppression
+# Iteration 2 baseline (expected to fail on impulsive noise)
+noisereduce==3.0.2
+# Iteration 3 & 4 final
+deepfilternet==0.5.6
+
+# VAD
+# Silero VAD installed via torch hub (no pypi pin needed)
+# but onnxruntime required for backend
+onnxruntime==1.18.1
+
+# Wake word — primary
+openwakeword==0.6.0
+
+# Wake word — fallback
+pvporcupine==3.0.2
+
+# PyTorch (CPU build — Pi 5 compatible)
+torch==2.3.1
+torchaudio==2.3.1
+
+# Utilities
+tabulate==0.9.0
+matplotlib==3.9.0
+tqdm==4.66.4
+loguru==0.7.2

@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+env/
+venv/
+.venv/
+
+# Models (large binaries — regenerate with scripts/train_wake_word.py)
+models/*.onnx
+models/*.pkl
+models/*.tflite
+models/*.ppn
+
+# Training data (large — not needed for inference)
+training_data/
+
+# Generated audio
+assets/denoised_output.wav
+
+# Logs
+logs/*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# pytest
+.pytest_cache/
+
+# Deepgram / Porcupine keys — use .env file, never commit
+.env
+*.env
+
+# torch hub cache symlinks
+*.cache
