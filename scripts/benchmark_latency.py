@@ -23,7 +23,7 @@ from loguru import logger
 from tabulate import tabulate
 from tara_pipeline.pipeline import TaraPipeline
 from tara_pipeline.utils.metrics import reset_profiler, get_profiler
-from tara_pipeline.config import LATENCY_BUDGET
+from tara_pipeline.config import LATENCY_BUDGET, DEFAULT_WAKE_WORD_BACKEND
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,8 +43,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--wake-word-backend",
-        choices=["openwakeword", "porcupine", "none"],
-        default="openwakeword",
+        choices=["openwakeword", "porcupine", "whisper_phoneme", "deepgram", "none"],
+        default=DEFAULT_WAKE_WORD_BACKEND,
     )
     parser.add_argument(
         "--output-json",

@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from loguru import logger
 from tara_pipeline.pipeline import TaraPipeline, PipelineResult
 from tara_pipeline.utils.metrics import get_profiler, reset_profiler
-from tara_pipeline.config import ASSETS_DIR
+from tara_pipeline.config import ASSETS_DIR, DEFAULT_WAKE_WORD_BACKEND
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,8 +46,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--wake-word-backend",
-        choices=["openwakeword", "porcupine", "none"],
-        default="openwakeword",
+        choices=["openwakeword", "porcupine", "whisper_phoneme", "deepgram", "none"],
+        default=DEFAULT_WAKE_WORD_BACKEND,
     )
     return parser.parse_args()
 
@@ -63,7 +63,7 @@ ITERATION_DESCRIPTIONS = {
 def run_iteration(
     iteration: int,
     audio_path: Path,
-    wake_word_backend: str = "openwakeword",
+    wake_word_backend: str = DEFAULT_WAKE_WORD_BACKEND,
 ) -> dict:
     """Run a single iteration and return results dict for methodology doc."""
     print(f"\n{'='*70}")

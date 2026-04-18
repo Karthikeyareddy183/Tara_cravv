@@ -24,8 +24,6 @@ models/*.ppn
 # Training data (large — not needed for inference)
 training_data/
 
-# Generated audio
-assets/denoised_output.wav
 
 # Logs
 logs/*.log

@@ -53,6 +53,7 @@ class LatencyProfiler:
         budgets = {
             "noise_suppression": LATENCY_BUDGET.noise_suppression_ms,
             "vad": LATENCY_BUDGET.vad_ms,
+            "vad_amortised": LATENCY_BUDGET.vad_ms,
             "wake_word": LATENCY_BUDGET.wake_word_ms,
             "stt": LATENCY_BUDGET.stt_ms,
         }
@@ -63,7 +64,7 @@ class LatencyProfiler:
         rows = []
         total_avgs = []
 
-        stage_order = ["noise_suppression", "vad", "wake_word", "stt"]
+        stage_order = ["noise_suppression", "vad", "vad_amortised", "wake_word", "stt"]
         for stage in stage_order:
             if stage not in self._timings:
                 continue
@@ -110,7 +111,6 @@ class LatencyProfiler:
             headers=["Stage", "Avg (ms)", "P95 (ms)", "Budget (ms)", "Status"],
             tablefmt="github",
         )
-        logger.info(f"\nLatency Report:\n{table}")
         return table
 
     def all_timings(self) -> dict[str, list[float]]:

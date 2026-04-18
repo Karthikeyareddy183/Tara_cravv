@@ -41,12 +41,16 @@ from tara_pipeline.config import (
     SAMPLE_RATE,
     WAKE_WORD_BUFFER_S,
     WAKE_WORD_PROBE_S,
+    DEEPGRAM_WAKE_PROBE_S,
     OWW_THRESHOLD,
     OWW_INFERENCE_FRAMEWORK,
     PORCUPINE_ACCESS_KEY,
     PORCUPINE_SENSITIVITY,
+    PORCUPINE_KEYWORD_PATHS,
     BUDGET_WAKE_WORD_MS,
+    DEFAULT_WAKE_WORD_BACKEND,
     FASTER_WHISPER_MODEL,
+    ROOT_DIR,
 )
 from tara_pipeline.utils.metrics import LatencyProfiler, stage_timer
 
@@ -252,11 +256,14 @@ class PorcupineDetector(BaseWakeWordDetector):
     def __init__(
         self,
         keywords: list[str] | None = None,
+        keyword_paths: list[str] | None = None,
         sensitivity: float = PORCUPINE_SENSITIVITY,
         profiler: LatencyProfiler | None = None,
     ) -> None:
         super().__init__(profiler)
-        self.keywords = keywords or ["porcupine"]  # default keyword for testing
+        # keyword_paths takes precedence over built-in keywords
+        self._keyword_paths = keyword_paths or PORCUPINE_KEYWORD_PATHS or []
+        self.keywords = keywords or ["hey_tara"]
         self.sensitivity = sensitivity
         self._porcupine = None
         self._access_key = (
@@ -272,16 +279,35 @@ class PorcupineDetector(BaseWakeWordDetector):
             )
         try:
             import pvporcupine
-            self._porcupine = pvporcupine.create(
-                access_key=self._access_key,
-                keywords=self.keywords,
-                sensitivities=[self.sensitivity] * len(self.keywords),
-            )
-            logger.info(
-                f"Porcupine: loaded | keywords={self.keywords} | "
-                f"sample_rate={self._porcupine.sample_rate} | "
-                f"frame_length={self._porcupine.frame_length}"
-            )
+
+            if self._keyword_paths:
+                # Resolve paths relative to project root
+                abs_paths = [
+                    str(ROOT_DIR / p) if not os.path.isabs(p) else p
+                    for p in self._keyword_paths
+                ]
+                self._porcupine = pvporcupine.create(
+                    access_key=self._access_key,
+                    keyword_paths=abs_paths,
+                    sensitivities=[self.sensitivity] * len(abs_paths),
+                )
+                logger.info(
+                    f"Porcupine: loaded custom model | paths={abs_paths} | "
+                    f"sensitivity={self.sensitivity} | "
+                    f"sample_rate={self._porcupine.sample_rate} | "
+                    f"frame_length={self._porcupine.frame_length}"
+                )
+            else:
+                self._porcupine = pvporcupine.create(
+                    access_key=self._access_key,
+                    keywords=self.keywords,
+                    sensitivities=[self.sensitivity] * len(self.keywords),
+                )
+                logger.info(
+                    f"Porcupine: loaded built-in | keywords={self.keywords} | "
+                    f"sample_rate={self._porcupine.sample_rate} | "
+                    f"frame_length={self._porcupine.frame_length}"
+                )
         except ImportError as e:
             raise ImportError("Install pvporcupine: pip install pvporcupine") from e
         except Exception as e:
@@ -318,7 +344,13 @@ class PorcupineDetector(BaseWakeWordDetector):
                     max_score = 1.0  # Porcupine binary decision
                     break
 
-        keyword = self.keywords[keyword_idx] if triggered and keyword_idx >= 0 else None
+        if triggered and keyword_idx >= 0:
+            if self._keyword_paths:
+                keyword = f"hey_tara[{keyword_idx}]"  # custom model, index maps to path
+            else:
+                keyword = self.keywords[keyword_idx] if keyword_idx < len(self.keywords) else None
+        else:
+            keyword = None
         return WakeWordResult(
             triggered=triggered,
             score=max_score,
@@ -446,8 +478,139 @@ class WhisperPhonemeWakeWord(BaseWakeWordDetector):
         )
 
 
+class DeepgramWakeWord(BaseWakeWordDetector):
+    """
+    Wake word detection via Deepgram Nova-2.
+
+    Probes first DEEPGRAM_WAKE_PROBE_S (1.5s) of each denoised VAD segment.
+    Triggers if transcript starts with "tara" or "hey tara".
+
+    Why Deepgram over faster-whisper for wake word:
+      - Deepgram playground confirmed "Tara" audible in denoised audio
+      - faster-whisper tiny.en misses Indian-accented "Tara" (0/24 in Iteration 4c)
+      - Deepgram Nova-2 handles accent variation and residual noise better
+      - 1.5s probe captures "Tara" even when VAD segment starts before speech onset
+
+    Latency note:
+      - ~400-600ms from India → US. Exceeds 300ms wake word budget.
+      - However: eliminates a second STT API call — total pipeline latency unchanged.
+      - Pi 5 deployment: requires internet. Offline alternative = re-record Porcupine
+        samples with real voice to fix TTS/accent mismatch.
+    """
+
+    WAKE_PHRASES: list[str] = ["hey tara", "tara"]
+    API_URL = "https://api.deepgram.com/v1/listen"
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        probe_s: float = DEEPGRAM_WAKE_PROBE_S,
+        profiler: LatencyProfiler | None = None,
+    ) -> None:
+        super().__init__(profiler)
+        self.api_key = api_key or os.environ.get("DEEPGRAM_API_KEY", "")
+        if not self.api_key:
+            raise ValueError(
+                "DeepgramWakeWord requires DEEPGRAM_API_KEY env var. "
+                "Free key at: https://console.deepgram.com"
+            )
+        self.probe_s = probe_s
+        # Persistent session: reuses TCP+TLS connections across calls
+        # Saves ~200-400ms per call vs bare requests.post
+        import requests
+        self._session = requests.Session()
+        self._session.headers.update({
+            "Authorization": f"Token {self.api_key}",
+            "Content-Type": "audio/wav",
+        })
+        logger.info(f"DeepgramWakeWord: ready | probe={probe_s}s | model=nova-3")
+
+    def detect_at_utterance_start(
+        self, full_segment: np.ndarray, sr: int = SAMPLE_RATE
+    ) -> WakeWordResult:
+        # Override base class: base clips to WAKE_WORD_BUFFER_S (1.0s) which is too short.
+        # Deepgram needs probe_s (3.0s) of context to reliably detect Indian-accented "Tara".
+        probe_samples = int(sr * self.probe_s)
+        probe = full_segment[:probe_samples]
+        if len(probe) < probe_samples:
+            probe = np.pad(probe, (0, probe_samples - len(probe)))
+        return self.detect(probe, sr)
+
+    def detect(self, audio: np.ndarray, sr: int = SAMPLE_RATE) -> WakeWordResult:
+        import io
+        import wave
+
+        probe_samples = int(sr * self.probe_s)
+        probe = audio[:probe_samples]
+        if len(probe) < probe_samples:
+            probe = np.pad(probe, (0, probe_samples - len(probe)))
+
+        audio_int16 = (np.clip(probe, -1.0, 1.0) * 32767).astype(np.int16)
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sr)
+            wf.writeframes(audio_int16.tobytes())
+        wav_bytes = buf.getvalue()
+
+        with stage_timer("wake_word", self.profiler, BUDGET_WAKE_WORD_MS) as t:
+            resp = self._session.post(
+                self.API_URL,
+                params={
+                    "model": "nova-3",
+                    "language": "en",
+                    "smart_format": "true",
+                    "keyterm": "Tara",
+                },
+                data=wav_bytes,
+                timeout=8,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        raw_text = (
+            data.get("results", {})
+            .get("channels", [{}])[0]
+            .get("alternatives", [{}])[0]
+            .get("transcript", "")
+            .strip()
+        )
+        confidence = (
+            data.get("results", {})
+            .get("channels", [{}])[0]
+            .get("alternatives", [{}])[0]
+            .get("confidence", 0.0)
+        )
+
+        normalized = re.sub(r"[^\w\s]", "", raw_text.lower()).strip()
+
+        triggered = False
+        matched_phrase = None
+        for phrase in self.WAKE_PHRASES:
+            # whole-word match anywhere in transcript — covers "Hey Tara ..." and "Tara ..."
+            pattern = r"\b" + re.escape(phrase) + r"\b"
+            if re.search(pattern, normalized):
+                triggered = True
+                matched_phrase = phrase
+                break
+
+        logger.info(
+            f"DeepgramWakeWord | raw='{raw_text}' | triggered={triggered} | "
+            f"conf={confidence:.2f} | {t['elapsed_ms']:.1f}ms"
+        )
+
+        return WakeWordResult(
+            triggered=triggered,
+            score=float(confidence) if triggered else 0.0,
+            backend="deepgram",
+            elapsed_ms=t["elapsed_ms"],
+            keyword=matched_phrase,
+        )
+
+
 def create_wake_word_detector(
-    backend: str = "openwakeword",
+    backend: str = DEFAULT_WAKE_WORD_BACKEND,
     profiler: LatencyProfiler | None = None,
     **kwargs,
 ) -> BaseWakeWordDetector:
@@ -464,6 +627,8 @@ def create_wake_word_detector(
         return PorcupineDetector(profiler=profiler, **kwargs)
     elif backend == "whisper_phoneme":
         return WhisperPhonemeWakeWord(profiler=profiler, **kwargs)
+    elif backend == "deepgram":
+        return DeepgramWakeWord(profiler=profiler, **kwargs)
     elif backend == "none":
         return PassthroughWakeWord(profiler=profiler)
     else:
@@ -471,7 +636,7 @@ def create_wake_word_detector(
 
 
 def create_wake_word_detector_with_fallback(
-    primary: str = "openwakeword",
+    primary: str = DEFAULT_WAKE_WORD_BACKEND,
     fallback: str = "whisper_phoneme",
     profiler: LatencyProfiler | None = None,
     **kwargs,

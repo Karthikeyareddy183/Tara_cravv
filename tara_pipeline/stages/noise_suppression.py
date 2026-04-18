@@ -86,6 +86,13 @@ class NoisereduceSuppressor(BaseNoiseSuppressor):
         return suppressed.astype(np.float32), t["elapsed_ms"]
 
 
+# Module-level cache — one model load per process lifetime
+_DFN_MODEL = None
+_DFN_STATE = None
+_DFN_ENHANCE = None
+_DFN_INIT_DF = None
+
+
 class DeepFilterNetSuppressor(BaseNoiseSuppressor):
     """
     DeepFilterNet neural noise suppression (Iteration 3+ final pipeline).
@@ -103,8 +110,6 @@ class DeepFilterNetSuppressor(BaseNoiseSuppressor):
 
     def __init__(self, profiler: LatencyProfiler | None = None) -> None:
         super().__init__(profiler)
-        self._model = None
-        self._df_state = None
         self._load_model()
 
     @staticmethod
@@ -145,13 +150,23 @@ class DeepFilterNetSuppressor(BaseNoiseSuppressor):
                 torchaudio.backend.common = common_mod
 
     def _load_model(self) -> None:
+        global _DFN_MODEL, _DFN_STATE, _DFN_ENHANCE, _DFN_INIT_DF
+        if _DFN_MODEL is not None:
+            self._model = _DFN_MODEL
+            self._df_state = _DFN_STATE
+            self._enhance = _DFN_ENHANCE
+            logger.info("DeepFilterNetSuppressor: reusing cached model")
+            return
         try:
             self._patch_torchaudio_compat()
             from df import enhance, init_df
-            self._enhance = enhance
-            self._init_df = init_df
-            self._model, self._df_state, _ = init_df()
-            logger.info("DeepFilterNetSuppressor: model loaded")
+            _DFN_ENHANCE = enhance
+            _DFN_INIT_DF = init_df
+            _DFN_MODEL, _DFN_STATE, _ = init_df()
+            self._model = _DFN_MODEL
+            self._df_state = _DFN_STATE
+            self._enhance = _DFN_ENHANCE
+            logger.info("DeepFilterNetSuppressor: model loaded and cached")
         except ImportError as e:
             raise ImportError(
                 "Install deepfilternet: pip install deepfilternet"

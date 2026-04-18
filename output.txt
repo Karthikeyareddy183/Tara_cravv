@@ -1,0 +1,115 @@
+(env) PS C:\Users\Acer\Tara> C:/Users/Acer/Tara/env/Scripts/python.exe scripts/run_pipeline.py assets/tara_assignment_recording_clipped.flac --iteration 4 --wake-word-backend deepgram --stt-backend deepgram
+07:56:00.749 | INFO     | Starting Iteration 4 | audio=assets\tara_assignment_recording_clipped.flac
+07:56:00.750 | INFO     | Initialising TaraPipeline (Iteration 4)
+07:56:00.750 | INFO     |   noise_mode=deepfilternet | stt=deepgram | wake_word=deepgram
+2026-04-18 07:56:00 | INFO     | DF | Running on torch 2.11.0+cpu
+2026-04-18 07:56:00 | INFO     | DF | Running on host DESKTOP-FUTD9C0
+2026-04-18 07:56:01 | INFO     | DF | Git commit: 6673159, branch: main
+2026-04-18 07:56:01 | INFO     | DF | Loading model settings of DeepFilterNet3
+2026-04-18 07:56:01 | INFO     | DF | Using DeepFilterNet3 model at C:\Users\Acer\AppData\Local\DeepFilterNet\DeepFilterNet\Cache\DeepFilterNet3
+2026-04-18 07:56:01 | INFO     | DF | Initializing model `deepfilternet3`
+2026-04-18 07:56:01 | INFO     | DF | Found checkpoint C:\Users\Acer\AppData\Local\DeepFilterNet\DeepFilterNet\Cache\DeepFilterNet3\checkpoints\model_120.ckpt.best with epoch 120
+2026-04-18 07:56:01 | INFO     | DF | Running on device cpu
+2026-04-18 07:56:01 | INFO     | DF | Model loaded
+2026-04-18 07:56:01 | INFO     | DF | DeepFilterNetSuppressor: model loaded and cached
+2026-04-18 07:56:01 | INFO     | DF | SileroVAD: loading from torch hub...
+Using cache found in C:\Users\Acer/.cache\torch\hub\snakers4_silero-vad_master
+2026-04-18 07:56:03 | INFO     | DF | SileroVAD: loaded (ONNX backend)
+2026-04-18 07:56:03 | INFO     | DF | DeepgramSTT: model=nova-2 | language=en | API ready
+2026-04-18 07:56:04 | INFO     | DF | DeepgramWakeWord: ready | probe=3.0s | model=nova-3
+2026-04-18 07:56:04 | INFO     | DF | Wake word: using deepgram
+2026-04-18 07:56:04 | INFO     | DF | TaraPipeline: all stages initialised
+2026-04-18 07:56:06 | INFO     | DF | Loaded tara_assignment_recording_clipped.flac: 143.10s audio | sr=16000 | load_time=2928.9ms
+2026-04-18 07:56:08 | WARNING  | DF | OVER BUDGET | vad: 1417.9ms (budget=100ms)
+2026-04-18 07:56:08 | WARNING  | DF | [vad] 1417.9ms exceeds budget 100ms
+2026-04-18 07:56:08 | INFO     | DF | VAD: 6 speech segments | elapsed=1417.9ms
+2026-04-18 07:56:08 | INFO     | DF | VAD: 6 segments detected
+2026-04-18 07:56:08 | INFO     | DF | Iteration 4: Full pipeline — VAD → per-segment DeepFilterNet → WakeWord → STT
+2026-04-18 07:56:09 | WARNING  | DF | OVER BUDGET | noise_suppression: 249.9ms (budget=200ms)
+2026-04-18 07:56:09 | WARNING  | DF | [noise_suppression] 249.9ms exceeds budget 200ms
+2026-04-18 07:56:12 | WARNING  | DF | OVER BUDGET | wake_word: 3071.3ms (budget=300ms)
+2026-04-18 07:56:12 | WARNING  | DF | [wake_word] 3071.3ms exceeds budget 300ms
+2026-04-18 07:56:12 | INFO     | DF | DeepgramWakeWord | raw='Hey, Tara.' | triggered=True | conf=1.00 | 3071.3ms
+2026-04-18 07:56:12 | WARNING  | DF | OVER BUDGET | wake_word: 3100.1ms (budget=300ms)
+2026-04-18 07:56:12 | WARNING  | DF | [wake_word] 3100.1ms exceeds budget 300ms
+2026-04-18 07:56:12 | INFO     | DF | DeepgramWakeWord | raw='' | triggered=False | conf=0.00 | 3100.1ms
+2026-04-18 07:56:12 | WARNING  | DF | OVER BUDGET | wake_word: 3223.6ms (budget=300ms)
+2026-04-18 07:56:12 | WARNING  | DF | [wake_word] 3223.6ms exceeds budget 300ms
+2026-04-18 07:56:12 | INFO     | DF | DeepgramWakeWord | raw='Hey, Tara.' | triggered=True | conf=0.98 | 3223.6ms
+2026-04-18 07:56:12 | WARNING  | DF | OVER BUDGET | wake_word: 3301.9ms (budget=300ms)
+2026-04-18 07:56:12 | WARNING  | DF | [wake_word] 3301.9ms exceeds budget 300ms
+2026-04-18 07:56:12 | INFO     | DF | DeepgramWakeWord | raw='' | triggered=False | conf=0.00 | 3301.9ms
+2026-04-18 07:56:13 | WARNING  | DF | OVER BUDGET | wake_word: 959.3ms (budget=300ms)
+2026-04-18 07:56:13 | WARNING  | DF | [wake_word] 959.3ms exceeds budget 300ms
+2026-04-18 07:56:13 | INFO     | DF | DeepgramWakeWord | raw='Tara, can you tell me what is the next' | triggered=True | conf=1.00 | 959.3ms  
+2026-04-18 07:56:13 | WARNING  | DF | OVER BUDGET | wake_word: 1329.0ms (budget=300ms)
+2026-04-18 07:56:13 | WARNING  | DF | [wake_word] 1329.0ms exceeds budget 300ms
+2026-04-18 07:56:13 | INFO     | DF | DeepgramWakeWord | raw='' | triggered=False | conf=0.00 | 1329.0ms
+2026-04-18 07:56:13 | INFO     | DF | Wake word TRIGGERED at 8.37s | score=0.997 | backend=deepgram
+2026-04-18 07:56:16 | WARNING  | DF | OVER BUDGET | stt: 2227.6ms (budget=1000ms)
+2026-04-18 07:56:16 | WARNING  | DF | [stt] 2227.6ms exceeds budget 1000ms
+2026-04-18 07:56:16 | INFO     | DF | DeepgramSTT (nova-2): 'Hey, Taras.' | conf=0.77 | 2228ms
+2026-04-18 07:56:16 | WARNING  | DF | STT OVER BUDGET: 2228ms > 1000ms
+2026-04-18 07:56:16 | WARNING  | DF | TOTAL LATENCY OVER BUDGET: 5483ms > 2000ms
+2026-04-18 07:56:16 | INFO     | DF | Wake word TRIGGERED at 13.01s | score=0.982 | backend=deepgram
+2026-04-18 07:56:18 | WARNING  | DF | OVER BUDGET | stt: 2297.8ms (budget=1000ms)
+2026-04-18 07:56:18 | WARNING  | DF | [stt] 2297.8ms exceeds budget 1000ms
+2026-04-18 07:56:18 | INFO     | DF | DeepgramSTT (nova-2): 'Hey,' | conf=0.55 | 2298ms
+2026-04-18 07:56:18 | WARNING  | DF | STT OVER BUDGET: 2298ms > 1000ms
+2026-04-18 07:56:18 | WARNING  | DF | TOTAL LATENCY OVER BUDGET: 5698ms > 2000ms
+2026-04-18 07:56:18 | INFO     | DF | Wake word TRIGGERED at 34.13s | score=0.997 | backend=deepgram
+2026-04-18 07:56:20 | WARNING  | DF | OVER BUDGET | stt: 2389.6ms (budget=1000ms)
+2026-04-18 07:56:20 | WARNING  | DF | [stt] 2389.6ms exceeds budget 1000ms
+2026-04-18 07:56:20 | INFO     | DF | DeepgramSTT (nova-2): 'Can you tell me what is the next step of the recipe?' | conf=1.00 | 2390ms       
+2026-04-18 07:56:20 | WARNING  | DF | STT OVER BUDGET: 2390ms > 1000ms
+2026-04-18 07:56:20 | WARNING  | DF | TOTAL LATENCY OVER BUDGET: 3599ms > 2000ms
+2026-04-18 07:56:20 | INFO     | DF |
+============================================================
+TARA PIPELINE RESULT (Iteration 4)
+============================================================
+Audio: assets\tara_assignment_recording_clipped.flac (143.1s)
+VAD segments detected: 6
+Wake word triggers: 3
+Wake word rejected: 3
+Commands transcribed: 3
+Total pipeline run: 16853ms
+============================================================
+[1] 8.37s–13.01s | 5483ms (OVER BUDGET)
+     TRANSCRIPT: 'Hey, Taras.'
+     TIMINGS: {'noise_suppression': 183.82450000353856, 'vad_amortised': 1417.8828000003705, 'wake_word': 3071.2672999943607, 'stt': 2227.5768000035896}
+[2] 13.01s–17.74s | 5698ms (OVER BUDGET)
+     TRANSCRIPT: 'Hey,'
+     TIMINGS: {'noise_suppression': 176.36730000231182, 'vad_amortised': 1417.8828000003705, 'wake_word': 3223.5853999954998, 'stt': 2297.8083999987575}
+[3] 34.13s–39.95s | 3599ms (OVER BUDGET)
+     TRANSCRIPT: 'Can you tell me what is the next step of the recipe?'
+     TIMINGS: {'noise_suppression': 249.86590000480646, 'vad_amortised': 1417.8828000003705, 'wake_word': 959.3401000020094, 'stt': 2389.647900003183}
+============================================================
+
+| Stage             |   Avg (ms) | P95 (ms)   |   Budget (ms) | Status   |
+|-------------------|------------|------------|---------------|----------|
+| Noise Suppression |        185 | 236        |           200 | OK       |
+| Vad               |       1418 | 1418       |           100 | OVER     |
+| Wake Word         |       2498 | 3282       |           300 | OVER     |
+| Stt               |       2305 | 2380       |          1000 | OVER     |
+| TOTAL             |       6406 | -          |          2000 | OVER     |
+
+============================================================
+TARA PIPELINE RESULT (Iteration 4)
+============================================================
+Audio: assets\tara_assignment_recording_clipped.flac (143.1s)
+VAD segments detected: 6
+Wake word triggers: 3
+Wake word rejected: 3
+Commands transcribed: 3
+Total pipeline run: 16853ms
+============================================================
+[1] 8.37s–13.01s | 5483ms (OVER BUDGET)
+     TRANSCRIPT: 'Hey, Taras.'
+     TIMINGS: {'noise_suppression': 183.82450000353856, 'vad_amortised': 1417.8828000003705, 'wake_word': 3071.2672999943607, 'stt': 2227.5768000035896}
+[2] 13.01s–17.74s | 5698ms (OVER BUDGET)
+     TRANSCRIPT: 'Hey,'
+     TIMINGS: {'noise_suppression': 176.36730000231182, 'vad_amortised': 1417.8828000003705, 'wake_word': 3223.5853999954998, 'stt': 2297.8083999987575}
+[3] 34.13s–39.95s | 3599ms (OVER BUDGET)
+     TRANSCRIPT: 'Can you tell me what is the next step of the recipe?'
+     TIMINGS: {'noise_suppression': 249.86590000480646, 'vad_amortised': 1417.8828000003705, 'wake_word': 959.3401000020094, 'stt': 2389.647900003183}
+============================================================

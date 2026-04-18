@@ -19,14 +19,26 @@ Wake word backends:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 # Add project root to sys.path for direct script execution
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
+
+# Load .env from project root if present (no dependency on python-dotenv)
+_env_file = _ROOT / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            os.environ[_k.strip()] = _v.strip()
 
 from loguru import logger
 from tara_pipeline.pipeline import TaraPipeline
+from tara_pipeline.config import DEFAULT_WAKE_WORD_BACKEND
 from tara_pipeline.utils.metrics import get_profiler
 
 
@@ -49,8 +61,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--wake-word-backend",
-        choices=["openwakeword", "porcupine", "whisper_phoneme", "none"],
-        default="whisper_phoneme",
+        choices=["openwakeword", "porcupine", "whisper_phoneme", "deepgram", "none"],
+        default=DEFAULT_WAKE_WORD_BACKEND,
         help="Wake word backend (only used in iteration 4)",
     )
     parser.add_argument(
@@ -92,12 +104,20 @@ def main() -> int:
         logger.error(f"Audio file not found: {args.audio}")
         return 1
 
+    # When wake word uses Deepgram, default STT to Deepgram too —
+    # tiny.en (39M params) can't handle Indian-accented English,
+    # but Deepgram handles it accurately.
+    stt_backend = args.stt_backend
+    if args.wake_word_backend == "deepgram" and stt_backend == "faster_whisper":
+        stt_backend = "deepgram"
+        logger.info("Auto-selecting Deepgram STT (wake-word-backend=deepgram, accent accuracy)")
+
     logger.info(f"Starting Iteration {args.iteration} | audio={args.audio}")
 
     pipeline = TaraPipeline(
         iteration=args.iteration,
         wake_word_backend=args.wake_word_backend,
-        stt_backend=args.stt_backend,
+        stt_backend=stt_backend,
     )
     result = pipeline.run(args.audio)
 

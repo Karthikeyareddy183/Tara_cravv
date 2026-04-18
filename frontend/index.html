@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tara — Voice Pipeline Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            mono: ['Fira Code', 'monospace'],
+            sans: ['Fira Sans', 'sans-serif'],
+          },
+          colors: {
+            primary: '#3B82F6',
+            secondary: '#60A5FA',
+            accent: '#F97316',
+            surface: '#0F172A',
+            panel: '#1E293B',
+            border: '#334155',
+            muted: '#64748B',
+          },
+          keyframes: {
+            'fade-in': { from: { opacity: 0, transform: 'translateY(8px)' }, to: { opacity: 1, transform: 'translateY(0)' } },
+            pulse2: { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.4 } },
+            shimmer: { '0%': { backgroundPosition: '-200% 0' }, '100%': { backgroundPosition: '200% 0' } },
+          },
+          animation: {
+            'fade-in': 'fade-in 0.3s ease-out forwards',
+            pulse2: 'pulse2 1.5s ease-in-out infinite',
+            shimmer: 'shimmer 1.8s linear infinite',
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    body { background: #0A0E1A; color: #E2E8F0; }
+    .drop-zone { border: 2px dashed #334155; transition: border-color 0.2s, background 0.2s; }
+    .drop-zone.drag-over { border-color: #3B82F6; background: rgba(59,130,246,0.07); }
+    .stage-bar { transition: width 0.6s cubic-bezier(0.4,0,0.2,1); }
+    .waveform-bar { animation: pulse2 1.5s ease-in-out infinite; }
+    .shimmer-bg {
+      background: linear-gradient(90deg, #1E293B 25%, #2D3F55 50%, #1E293B 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.8s linear infinite;
+    }
+    audio { accent-color: #3B82F6; }
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #0F172A; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+  </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+
+  <!-- Header -->
+  <header class="border-b border-border px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <!-- Mic icon -->
+      <svg class="w-7 h-7 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V4a3 3 0 0 1 3-3z" />
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19 10a7 7 0 0 1-14 0M12 17v4M8 21h8" />
+      </svg>
+      <span class="font-mono font-bold text-lg tracking-tight text-white">TARA</span>
+      <span class="text-muted text-sm font-mono">voice pipeline</span>
+    </div>
+    <span class="text-xs font-mono text-muted bg-panel px-3 py-1 rounded-full border border-border">Iteration 4</span>
+  </header>
+
+  <!-- Main -->
+  <main class="max-w-4xl mx-auto px-4 py-10 space-y-8">
+
+    <!-- Upload card -->
+    <section aria-labelledby="upload-heading">
+      <h1 id="upload-heading" class="text-2xl font-semibold text-white mb-1">Upload Audio</h1>
+      <p class="text-muted text-sm mb-5">DeepFilterNet denoising → Silero VAD → Deepgram wake word → faster-whisper STT</p>
+
+      <div
+        id="drop-zone"
+        class="drop-zone rounded-xl p-10 text-center cursor-pointer"
+        role="button"
+        tabindex="0"
+        aria-label="Upload audio file"
+        onclick="document.getElementById('file-input').click()"
+        onkeydown="if(event.key==='Enter'||event.key===' ')document.getElementById('file-input').click()"
+      >
+        <!-- Upload icon -->
+        <svg class="w-12 h-12 mx-auto text-muted mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16v1a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3v-1M12 12V4M8 8l4-4 4 4" />
+        </svg>
+        <p class="text-white font-medium mb-1">Drop audio file here</p>
+        <p class="text-muted text-sm">or click to browse · WAV, FLAC, MP3, OGG, M4A</p>
+        <input id="file-input" type="file" accept=".wav,.flac,.mp3,.ogg,.m4a,.webm" class="hidden" aria-label="Audio file input" />
+      </div>
+
+      <!-- Selected file info -->
+      <div id="file-info" class="hidden mt-3 flex items-center gap-3 px-4 py-3 rounded-lg bg-panel border border-border">
+        <!-- File icon -->
+        <svg class="w-5 h-5 text-primary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l5 5v12a2 2 0 0 1-2 2z" />
+        </svg>
+        <span id="file-name" class="text-sm text-white truncate font-mono"></span>
+        <span id="file-size" class="text-xs text-muted ml-auto flex-shrink-0 font-mono"></span>
+      </div>
+
+      <button
+        id="process-btn"
+        class="mt-4 w-full py-3 rounded-xl bg-primary hover:bg-blue-500 text-white font-semibold transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-surface"
+        disabled
+        onclick="processAudio()"
+      >
+        Run Pipeline
+      </button>
+    </section>
+
+    <!-- Progress -->
+    <section id="progress-section" class="hidden animate-fade-in" aria-live="polite" aria-label="Processing progress">
+      <h2 class="text-sm font-mono text-muted uppercase tracking-widest mb-4">Processing</h2>
+      <div class="space-y-3" id="stage-list">
+        <!-- Stages injected by JS -->
+      </div>
+    </section>
+
+    <!-- Results -->
+    <section id="results-section" class="hidden animate-fade-in space-y-6" aria-label="Pipeline results">
+
+      <!-- Stats row -->
+      <div id="stats-row" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+
+      <!-- Denoised audio -->
+      <div class="rounded-xl bg-panel border border-border p-5">
+        <h2 class="text-sm font-mono text-muted uppercase tracking-widest mb-3">Denoised Audio</h2>
+        <audio id="audio-player" controls class="w-full rounded-lg" aria-label="Denoised audio playback"></audio>
+      </div>
+
+      <!-- Commands -->
+      <div>
+        <h2 class="text-sm font-mono text-muted uppercase tracking-widest mb-3">Detected Commands</h2>
+        <div id="commands-list" class="space-y-3"></div>
+        <p id="no-commands" class="hidden text-muted text-sm text-center py-6 border border-dashed border-border rounded-xl">
+          No "Tara" commands detected in this recording.
+        </p>
+      </div>
+
+      <!-- Stage timings table -->
+      <div class="rounded-xl bg-panel border border-border p-5 overflow-x-auto">
+        <h2 class="text-sm font-mono text-muted uppercase tracking-widest mb-4">Latency Breakdown</h2>
+        <table class="w-full text-sm font-mono" aria-label="Stage latency breakdown">
+          <thead>
+            <tr class="text-muted text-xs uppercase">
+              <th class="text-left pb-3 pr-6">Stage</th>
+              <th class="text-right pb-3 pr-6">Time (ms)</th>
+              <th class="text-right pb-3 pr-6">Budget (ms)</th>
+              <th class="text-right pb-3">Status</th>
+            </tr>
+          </thead>
+          <tbody id="timing-table-body" class="divide-y divide-border"></tbody>
+        </table>
+      </div>
+
+    </section>
+
+    <!-- Error -->
+    <div id="error-box" class="hidden rounded-xl border border-red-800 bg-red-950/30 px-5 py-4 text-red-400 text-sm font-mono animate-fade-in" role="alert"></div>
+
+  </main>
+
+<script>
+const BUDGETS = { 'Noise Suppression': 200, 'VAD': 100, 'Wake Word': 300, 'STT': 1000, 'TOTAL': 2000 };
+
+const STAGES = [
+  { key: 'denoise', label: 'DeepFilterNet — noise suppression', icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z' },
+  { key: 'vad',     label: 'Silero VAD — speech segmentation', icon: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' },
+  { key: 'wakeword',label: 'Deepgram — wake word detection', icon: 'M15.536 8.464a5 5 0 0 1 0 7.072M12 9.5l.01-.01M6.464 8.464a5 5 0 0 0 0 7.072M18.364 5.636a9 9 0 0 1 0 12.728M5.636 5.636a9 9 0 0 0 0 12.728' },
+  { key: 'stt',     label: 'faster-whisper — transcription', icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 0 1-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' },
+];
+
+let selectedFile = null;
+
+// Drag & drop
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) setFile(f);
+});
+document.getElementById('file-input').addEventListener('change', e => {
+  if (e.target.files[0]) setFile(e.target.files[0]);
+});
+
+function setFile(f) {
+  selectedFile = f;
+  document.getElementById('file-name').textContent = f.name;
+  document.getElementById('file-size').textContent = formatBytes(f.size);
+  document.getElementById('file-info').classList.remove('hidden');
+  document.getElementById('process-btn').disabled = false;
+  hideResults();
+}
+
+function formatBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
+  return (n/1048576).toFixed(1) + ' MB';
+}
+
+function hideResults() {
+  ['progress-section','results-section','error-box'].forEach(id => {
+    document.getElementById(id).classList.add('hidden');
+  });
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-box');
+  el.textContent = 'Error: ' + msg;
+  el.classList.remove('hidden');
+}
+
+function stageIcon(path) {
+  return `<svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="${path}"/></svg>`;
+}
+
+function renderStages(activeKey) {
+  const list = document.getElementById('stage-list');
+  list.innerHTML = STAGES.map(s => {
+    const isDone = STAGES.findIndex(x => x.key === activeKey) > STAGES.findIndex(x => x.key === s.key);
+    const isActive = s.key === activeKey;
+    const dotColor = isDone ? 'bg-primary' : isActive ? 'bg-accent animate-pulse2' : 'bg-border';
+    const textColor = isDone ? 'text-white' : isActive ? 'text-accent' : 'text-muted';
+    return `
+      <div class="flex items-center gap-3 px-4 py-3 rounded-lg bg-panel border border-border">
+        <span class="w-2.5 h-2.5 rounded-full flex-shrink-0 ${dotColor}"></span>
+        <span class="text-primary flex-shrink-0">${stageIcon(s.icon)}</span>
+        <span class="text-sm ${textColor} font-mono">${s.label}</span>
+        ${isDone ? `<svg class="w-4 h-4 text-primary ml-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>` : ''}
+        ${isActive ? `<div class="ml-auto flex gap-0.5">${[0,1,2,3].map(i => `<span class="waveform-bar w-1 rounded-full bg-accent" style="height:${8+i*4}px;animation-delay:${i*0.12}s"></span>`).join('')}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function renderStats(data) {
+  const stats = [
+    { label: 'Duration', value: data.duration_s + 's' },
+    { label: 'VAD Segments', value: data.vad_segments },
+    { label: 'Wake Triggers', value: data.wake_word_triggers },
+    { label: 'Commands', value: data.commands.length },
+  ];
+  document.getElementById('stats-row').innerHTML = stats.map(s => `
+    <div class="rounded-xl bg-panel border border-border px-4 py-4 text-center">
+      <div class="text-2xl font-bold text-white font-mono">${s.value}</div>
+      <div class="text-xs text-muted mt-1">${s.label}</div>
+    </div>
+  `).join('');
+}
+
+function renderCommands(commands) {
+  const list = document.getElementById('commands-list');
+  const none = document.getElementById('no-commands');
+  if (!commands.length) {
+    list.innerHTML = '';
+    none.classList.remove('hidden');
+    return;
+  }
+  none.classList.add('hidden');
+  list.innerHTML = commands.map((cmd, i) => {
+    const budgetColor = cmd.over_budget ? 'text-red-400' : 'text-green-400';
+    const budgetLabel = cmd.over_budget ? 'OVER BUDGET' : 'OK';
+    return `
+      <div class="rounded-xl bg-panel border border-border p-5 space-y-3 animate-fade-in">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <span class="font-mono text-xs text-muted">Command ${i+1} · ${cmd.start_s}s – ${cmd.end_s}s</span>
+          <div class="flex items-center gap-3">
+            <span class="font-mono text-xs text-muted">${cmd.total_ms}ms</span>
+            <span class="font-mono text-xs font-semibold ${budgetColor}">${budgetLabel}</span>
+          </div>
+        </div>
+        ${cmd.transcript
+          ? `<p class="text-white text-base leading-relaxed">"${cmd.transcript}"</p>`
+          : `<p class="text-muted text-sm italic">No command audio after wake word clip</p>`
+        }
+        <div class="flex flex-wrap gap-2 pt-1">
+          <span class="text-xs font-mono bg-surface px-2 py-0.5 rounded border border-border text-muted">
+            ${cmd.wake_word_backend} · score=${cmd.wake_word_score}
+          </span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderTimings(data) {
+  const timings = data.commands[0]?.timings ?? {};
+  const rows = [
+    { stage: 'Noise Suppression', ms: timings.noise_suppression ?? data.noise_suppression_ms },
+    { stage: 'VAD', ms: timings.vad },
+    { stage: 'Wake Word', ms: timings.wake_word },
+    { stage: 'STT', ms: timings.stt },
+  ].filter(r => r.ms != null);
+
+  const total = rows.reduce((s, r) => s + r.ms, 0);
+  rows.push({ stage: 'TOTAL', ms: total });
+
+  document.getElementById('timing-table-body').innerHTML = rows.map(r => {
+    const budget = BUDGETS[r.stage];
+    const over = budget && r.ms > budget;
+    const statusColor = over ? 'text-red-400' : 'text-green-400';
+    const statusLabel = over ? 'OVER ✗' : 'OK ✓';
+    return `
+      <tr>
+        <td class="py-2.5 pr-6 text-white">${r.stage}</td>
+        <td class="py-2.5 pr-6 text-right ${over ? 'text-red-400' : 'text-white'}">${Math.round(r.ms)}</td>
+        <td class="py-2.5 pr-6 text-right text-muted">${budget ?? '—'}</td>
+        <td class="py-2.5 text-right font-semibold ${statusColor}">${budget ? statusLabel : '—'}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function processAudio() {
+  if (!selectedFile) return;
+
+  hideResults();
+  const btn = document.getElementById('process-btn');
+  btn.disabled = true;
+  btn.textContent = 'Processing…';
+
+  document.getElementById('progress-section').classList.remove('hidden');
+
+  const stageKeys = STAGES.map(s => s.key);
+  let stageIdx = 0;
+  renderStages(stageKeys[0]);
+
+  // Animate stage progression while waiting for API
+  const stageInterval = setInterval(() => {
+    stageIdx = (stageIdx + 1) % stageKeys.length;
+    renderStages(stageKeys[stageIdx]);
+  }, 4000);
+
+  const form = new FormData();
+  form.append('file', selectedFile);
+
+  try {
+    const res = await fetch('/process', { method: 'POST', body: form });
+    clearInterval(stageInterval);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+
+    const data = await res.json();
+    document.getElementById('progress-section').classList.add('hidden');
+
+    // Decode denoised audio
+    const audioBytes = Uint8Array.from(atob(data.denoised_audio_b64), c => c.charCodeAt(0));
+    const blob = new Blob([audioBytes], { type: 'audio/wav' });
+    const audioPlayer = document.getElementById('audio-player');
+    audioPlayer.src = URL.createObjectURL(blob);
+
+    renderStats(data);
+    renderCommands(data.commands);
+    renderTimings(data);
+
+    document.getElementById('results-section').classList.remove('hidden');
+
+  } catch (e) {
+    clearInterval(stageInterval);
+    document.getElementById('progress-section').classList.add('hidden');
+    showError(e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Pipeline';
+  }
+}
+</script>
+</body>
+</html>

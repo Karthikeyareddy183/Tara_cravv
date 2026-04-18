@@ -24,14 +24,17 @@ from loguru import logger
 from tara_pipeline.config import (
     SAMPLE_RATE,
     LATENCY_BUDGET,
+    DEFAULT_WAKE_WORD_BACKEND,
     WAKE_WORD_BUFFER_S,
     WAKE_WORD_PROBE_S,
+    DEEPGRAM_WAKE_PROBE_S,
+    DEEPGRAM_WAKE_CLIP_S,
 )
 from tara_pipeline.stages.noise_suppression import BaseNoiseSuppressor, create_suppressor
 from tara_pipeline.stages.vad import SileroVAD, SpeechSegment
 from tara_pipeline.stages.wake_word import BaseWakeWordDetector, create_wake_word_detector_with_fallback, WakeWordResult
 from tara_pipeline.stages.stt import BaseSTT, TranscriptionResult, create_stt
-from tara_pipeline.utils.audio import load_audio, split_on_silence_segments
+from tara_pipeline.utils.audio import load_audio
 from tara_pipeline.utils.metrics import LatencyProfiler, get_profiler, reset_profiler
 
 
@@ -104,7 +107,7 @@ class TaraPipeline:
         iteration: int = 4,
         noise_mode: str = "deepfilternet",
         stt_backend: str = "faster_whisper",
-        wake_word_backend: str = "openwakeword",
+        wake_word_backend: str = DEFAULT_WAKE_WORD_BACKEND,
         profiler: LatencyProfiler | None = None,
     ) -> None:
         self._stt_backend_name = stt_backend
@@ -205,17 +208,11 @@ class TaraPipeline:
             logger.info(result.summary())
             return result
 
-        # ── Stage 1: Noise suppression ───────────────────────────────────────
-        try:
-            audio_clean, ns_ms = self._suppressor.suppress(audio, sr)
-        except Exception as e:
-            logger.error(f"[noise_suppression] failed at {(time.perf_counter()-t_run_start)*1000:.0f}ms: {e}")
-            raise
-
-        # ── Iteration 2: noisereduce → Whisper on full clip ──────────────────
+        # ── Iteration 2: full-clip noise suppression → Whisper ───────────────
         if self.iteration == 2:
             logger.info("Iteration 2: noisereduce → Whisper base on full clip")
             try:
+                audio_clean, ns_ms = self._suppressor.suppress(audio, sr)
                 transcript = self._stt.transcribe(audio_clean, sr)
                 result.commands.append(CommandResult(
                     transcript=transcript.text,
@@ -227,17 +224,18 @@ class TaraPipeline:
                     total_ms=ns_ms + transcript.elapsed_ms,
                 ))
             except Exception as e:
-                logger.error(f"[stt] failed at {(time.perf_counter()-t_run_start)*1000:.0f}ms: {e}")
+                logger.error(f"[iter2] failed at {(time.perf_counter()-t_run_start)*1000:.0f}ms: {e}")
                 raise
             result.total_run_ms = (time.perf_counter() - t_run_start) * 1000
             logger.info(result.summary())
             return result
 
-        # ── Stage 2: VAD (iterations 3+) ────────────────────────────────────
+        # ── Stage 1: VAD on raw audio (iterations 3+) ───────────────────────
+        # Run VAD first so DeepFilterNet only processes speech, not silence.
         try:
-            seg_infos, vad_ms = self._vad.detect_segments(audio_clean, sr)
+            seg_infos, vad_ms = self._vad.detect_segments(audio, sr)
             segments_with_audio = [
-                (audio_clean[s.start_sample:s.end_sample], s) for s in seg_infos
+                (audio[s.start_sample:s.end_sample], s) for s in seg_infos
             ]
         except Exception as e:
             logger.error(f"[vad] failed at {(time.perf_counter()-t_run_start)*1000:.0f}ms: {e}")
@@ -251,12 +249,13 @@ class TaraPipeline:
             result.total_run_ms = (time.perf_counter() - t_run_start) * 1000
             return result
 
-        # ── Iteration 3: DeepFilterNet + VAD + faster-whisper (no wake word) ─
+        # ── Iteration 3: VAD + per-segment DeepFilterNet + faster-whisper ────
         if self.iteration == 3:
-            logger.info("Iteration 3: DeepFilterNet + VAD + faster-whisper (no wake word gate)")
+            logger.info("Iteration 3: VAD → per-segment DeepFilterNet → faster-whisper (no wake word gate)")
             for seg_audio, seg_info in segments_with_audio:
                 try:
-                    transcript = self._stt.transcribe(seg_audio, sr)
+                    seg_clean, ns_ms = self._suppressor.suppress(seg_audio, sr)
+                    transcript = self._stt.transcribe(seg_clean, sr)
                     if transcript.text.strip():
                         result.commands.append(CommandResult(
                             transcript=transcript.text,
@@ -273,7 +272,7 @@ class TaraPipeline:
                         ))
                 except Exception as e:
                     logger.error(
-                        f"[stt] segment {seg_info.start_s:.2f}s failed "
+                        f"[iter3] segment {seg_info.start_s:.2f}s failed "
                         f"at {(time.perf_counter()-t_run_start)*1000:.0f}ms: {e}"
                     )
             result.total_run_ms = (time.perf_counter() - t_run_start) * 1000
@@ -281,17 +280,28 @@ class TaraPipeline:
             return result
 
         # ── Iteration 4: Full pipeline with wake word ────────────────────────
-        logger.info("Iteration 4: Full pipeline — DeepFilterNet + VAD + WakeWord + STT")
+        logger.info("Iteration 4: Full pipeline — VAD → per-segment DeepFilterNet → WakeWord → STT")
+
+        # Process each speech segment end-to-end so the first accepted command
+        # is not blocked behind denoising every later segment.
         for seg_audio, seg_info in segments_with_audio:
-            # Stage 3: Wake word — CHECK ONLY UTTERANCE START
+            try:
+                seg_clean, ns_ms = self._suppressor.suppress(seg_audio, sr)
+            except Exception as e:
+                logger.error(
+                    f"[noise_suppression] segment {seg_info.start_s:.2f}s failed "
+                    f"at {(time.perf_counter()-t_run_start)*1000:.0f}ms: {e}"
+                )
+                result.wake_word_reject_count += 1
+                continue
+
             try:
                 ww_result: WakeWordResult = self._wake_word.detect_at_utterance_start(
-                    seg_audio, sr
+                    seg_clean, sr
                 )
             except Exception as e:
                 logger.error(
-                    f"[wake_word] segment {seg_info.start_s:.2f}s failed "
-                    f"at {(time.perf_counter()-t_run_start)*1000:.0f}ms: {e}"
+                    f"[wake_word] segment {seg_info.start_s:.2f}s failed: {e}"
                 )
                 result.wake_word_reject_count += 1
                 continue
@@ -311,30 +321,27 @@ class TaraPipeline:
             )
 
             # Step: Extract command audio — clip wake word from segment
-            # Only transcribe the command AFTER "Hey Tara"/"Tara", not the wake word itself
-            # whisper_phoneme probe was WAKE_WORD_PROBE_S (0.5s)
-            # OWW/porcupine checked WAKE_WORD_BUFFER_S (1.0s)
             if self._wake_word_backend == "whisper_phoneme":
                 clip_samples = int(sr * WAKE_WORD_PROBE_S)
+            elif self._wake_word_backend == "deepgram":
+                clip_samples = int(sr * DEEPGRAM_WAKE_CLIP_S)
             else:
                 clip_samples = int(sr * WAKE_WORD_BUFFER_S)
-            # Only clip if enough audio remains after (>0.3s) — avoids empty STT on short segs
             min_command_samples = int(sr * 0.3)
-            if len(seg_audio) > clip_samples + min_command_samples:
-                command_audio = seg_audio[clip_samples:]
+            if len(seg_clean) > clip_samples + min_command_samples:
+                command_audio = seg_clean[clip_samples:]
                 logger.debug(
                     f"Segment {seg_info.start_s:.2f}s: clipped {clip_samples/sr:.1f}s "
                     f"wake word → {len(command_audio)/sr:.2f}s command audio"
                 )
             else:
-                # Segment too short to clip cleanly — STT full segment
-                command_audio = seg_audio
+                command_audio = seg_clean
                 logger.debug(
-                    f"Segment {seg_info.start_s:.2f}s: short segment ({len(seg_audio)/sr:.2f}s) "
+                    f"Segment {seg_info.start_s:.2f}s: short segment ({len(seg_clean)/sr:.2f}s) "
                     f"— STT full audio without wake word clip"
                 )
 
-            # Stage 4: STT — transcribe command only (wake word already clipped)
+            # Stage 4: STT — transcribe command only
             try:
                 transcript = self._stt.transcribe(command_audio, sr)
             except Exception as e:
@@ -344,7 +351,9 @@ class TaraPipeline:
                 )
                 continue
 
-            total_ms = ns_ms + vad_ms + ww_result.elapsed_ms + transcript.elapsed_ms
+            # NOTE: vad_ms excluded from per-command total — it's a one-time
+            # amortised cost across all segments, not per-command latency.
+            total_ms = ns_ms + ww_result.elapsed_ms + transcript.elapsed_ms
 
             result.commands.append(CommandResult(
                 transcript=transcript.text,
@@ -354,7 +363,7 @@ class TaraPipeline:
                 wake_word_backend=ww_result.backend,
                 timings={
                     "noise_suppression": ns_ms,
-                    "vad": vad_ms,
+                    "vad_amortised": vad_ms,  # reported separately, not in total
                     "wake_word": ww_result.elapsed_ms,
                     "stt": transcript.elapsed_ms,
                 },

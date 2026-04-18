@@ -7,13 +7,21 @@ falls back to synthetic audio for CI environments.
 
 from __future__ import annotations
 
+import inspect
+
 import numpy as np
 import pytest
 import soundfile as sf
 from pathlib import Path
 
-from tara_pipeline.config import SAMPLE_RATE, LATENCY_BUDGET, ASSETS_DIR
+from tara_pipeline.config import (
+    SAMPLE_RATE,
+    LATENCY_BUDGET,
+    ASSETS_DIR,
+    DEFAULT_WAKE_WORD_BACKEND,
+)
 from tara_pipeline.pipeline import TaraPipeline, PipelineResult, CommandResult
+from tara_pipeline.stages.stt import FasterWhisperSTT
 from tara_pipeline.utils.audio import load_audio, save_audio
 from tara_pipeline.utils.metrics import reset_profiler
 
@@ -138,6 +146,26 @@ class TestCommandResult:
             total_ms=500.0,
         )
         assert cmd.over_budget is False
+
+
+class TestLatencyPlanImplementation:
+    def test_default_wake_word_backend_is_whisper_phoneme(self) -> None:
+        assert DEFAULT_WAKE_WORD_BACKEND == "whisper_phoneme"
+        wake_default = inspect.signature(TaraPipeline.__init__).parameters[
+            "wake_word_backend"
+        ].default
+        assert wake_default == "whisper_phoneme"
+
+    def test_faster_whisper_accepts_preloaded_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def fail_load_model(self) -> None:
+            raise AssertionError("_load_model should not run when a model is supplied")
+
+        dummy_model = object()
+        monkeypatch.setattr(FasterWhisperSTT, "_load_model", fail_load_model)
+
+        stt = FasterWhisperSTT(model=dummy_model)
+
+        assert stt._model is dummy_model
 
 
 class TestPipelineOnRealAudio:

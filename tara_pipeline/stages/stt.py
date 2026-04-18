@@ -156,6 +156,7 @@ class FasterWhisperSTT(BaseSTT):
         device: str = FASTER_WHISPER_DEVICE,
         compute_type: str = FASTER_WHISPER_COMPUTE_TYPE,
         beam_size: int = FASTER_WHISPER_BEAM_SIZE,
+        model=None,
         profiler: LatencyProfiler | None = None,
     ) -> None:
         super().__init__(profiler)
@@ -163,8 +164,11 @@ class FasterWhisperSTT(BaseSTT):
         self.device = device
         self.compute_type = compute_type
         self.beam_size = beam_size
-        self._model = None
-        self._load_model()
+        self._model = model
+        if self._model is None:
+            self._load_model()
+        else:
+            logger.info("FasterWhisperSTT: using preloaded model")
 
     def _load_model(self) -> None:
         try:
@@ -181,6 +185,11 @@ class FasterWhisperSTT(BaseSTT):
             )
             load_ms = (time.perf_counter() - t0) * 1000
             logger.info(f"FasterWhisperSTT: loaded in {load_ms:.0f}ms")
+            # Warm-up: first CTranslate2 inference pays JIT cost (~1.5s); amortise at load time
+            import numpy as _np
+            _warmup = _np.zeros(int(0.1 * 16000), dtype=_np.float32)
+            list(self._model.transcribe(_warmup, beam_size=1, language="en")[0])
+            logger.info("FasterWhisperSTT: warm-up complete")
         except ImportError as e:
             raise ImportError(
                 "Install faster-whisper: pip install faster-whisper"
@@ -260,6 +269,15 @@ class DeepgramSTT(BaseSTT):
             )
         self.model = model
         self.language = language
+
+        # Persistent session: reuses TCP+TLS connections across calls
+        import requests
+        self._session = requests.Session()
+        self._session.headers.update({
+            "Authorization": f"Token {self.api_key}",
+            "Content-Type": "audio/wav",
+        })
+
         logger.info(f"DeepgramSTT: model={model} | language={language} | API ready")
 
     def transcribe(self, audio: np.ndarray, sr: int = SAMPLE_RATE) -> TranscriptionResult:
@@ -278,13 +296,9 @@ class DeepgramSTT(BaseSTT):
         wav_bytes = buf.getvalue()
 
         with stage_timer("stt", self.profiler, BUDGET_STT_MS) as t:
-            resp = requests.post(
+            resp = self._session.post(
                 self.API_URL,
                 params={"model": self.model, "language": self.language, "smart_format": "true"},
-                headers={
-                    "Authorization": f"Token {self.api_key}",
-                    "Content-Type": "audio/wav",
-                },
                 data=wav_bytes,
                 timeout=10,
             )
